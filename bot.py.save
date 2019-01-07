@@ -1,0 +1,1052 @@
+#pip install pytelegrambotapi
+#pip install mysql-connector==2.1.6
+from TelegramBot import TelegramBot
+import config
+import strings_ukr as strings
+
+from telebot import types
+from utils import *
+#from utils import keyboard_tuple
+#from utils import set_state
+from TelegramBot import get_inline_keyboard, print_busket_item, show_busket, update_busket, choose_rest_keyboard, \
+    rest_keyboard
+
+from mysql.connector import connection
+
+#START SERVER THINGS
+import cherrypy
+import config
+
+
+WEBHOOK_HOST = '185.69.155.127'
+WEBHOOK_PORT = 443
+WEBHOOK_LISTEN = '0.0.0.0'
+
+
+WEBHOOK_SSL_CERT = './webhook_cert.pem'
+WEBHOOK_SSL_PRIV = './webhook_pkey.pem'
+
+WEBHOOK_URL_BASE = 'https://%s:%s' % (WEBHOOK_HOST, WEBHOOK_PORT)
+WEBHOOK_URL_PATH = '/%s/' % config.token
+
+tBot = TelegramBot(config.token)
+
+class WebhookServer(object):
+    @cherrypy.expose
+    def index(self):
+        if 'content-length' in cherrypy.request.headers and \
+                'content-type' in cherrypy.request.headers and \
+                cherrypy.request.headers['content-type'] == 'application/json':
+            length = int(cherrypy.request.headers['content-length'])
+            json_string = cherrypy.request.body.read(length).decode('utf-8')
+            update = types.Update.de_json(json_string)
+            tBot.bot.process_new_updates([update])
+            return ''
+        else:
+            raise cherrypy.HTTPError(403)
+#STOP SERVER THINGS
+
+#START COPYING THINGS
+
+# Состояния пользователя
+# 1: Выбор категории
+# 2: Выбор блюда
+# 3: Блюдо в корзине
+# 4: Корзина
+# 5: Имя
+# 6: Телефон
+# 7: Дополнительная информация
+# 8: Ресторан
+# 9: Остаточна інформація
+
+
+
+categoryList = [
+        'Роли',
+        'Бургери',
+        'Салати',
+        'Закуски',
+        'Супи',
+        'Гарячі страви',
+        'Гарніри',
+        'Соуси',
+        'Десерти',
+        'Додаткові інгридієнти',
+    ]
+
+MealNames = [
+    'Алабама',
+    'Аляска',
+    'Бруклін',
+    'Алабама1',
+    'Аляска1',
+    'Бруклін1'
+]
+
+MealPrices = [
+    140.00,
+    160.00,
+    130.00,
+    140.00,
+    160.00,
+    130.00
+]
+
+MealWeight = [
+    '285/50/30',
+    '275/50/30',
+    '290/50/30',
+    '285/50/30',
+    '275/50/30',
+    '290/50/30',
+]
+
+MealDesription = [
+    'Соковитий бургер з яловичою котлетою, міксом сніжного крабу та авокадо, соусом "Барбекю" та сиром "Чедер"',
+    'Котлета з ніжного філе окуня та норвежського лосося, салат "Рукола", помідори, мариновані огірки, соус "Тар-тар"',
+    'Ситний бургер  з яловичою котлетою, сиром "Чедер", беконом, свіжим салатом "Ромен", помідорами, цибулею та арахісом в житній булочці',
+    'Соковитий бургер з яловичою котлетою, міксом сніжного крабу та авокадо, соусом "Барбекю" та сиром "Чедер"',
+    'Котлета з ніжного філе окуня та норвежського лосося, салат "Рукола", помідори, мариновані огірки, соус "Тар-тар"',
+    'Ситний бургер  з яловичою котлетою, сиром "Чедер", беконом, свіжим салатом "Ромен", помідорами, цибулею та арахісом в житній булочці',
+]
+
+MealPhoto = [
+    'http://evrasia.in.ua/sites/default/files/imagecache/dish_page/Alabama.jpeg',  # Алабама
+    'http://evrasia.in.ua/sites/default/files/imagecache/dish_page/Aliaska.jpeg',  # Аляска
+    'http://evrasia.in.ua/sites/default/files/imagecache/dish_page/Brooklin.jpeg',  # Бруклин
+    'http://evrasia.in.ua/sites/default/files/imagecache/dish_page/Ceasar.jpeg',
+    'http://evrasia.in.ua/sites/default/files/imagecache/dish_page/Texas.jpeg',
+    'http://evrasia.in.ua/sites/default/files/imagecache/dish_page/memphis.jpeg'
+]
+
+MealNumbers = [
+    2014,
+    2012,
+    2011,
+    2010,
+    2009,
+    2008
+]
+
+resturants = [
+    'Бессарабская площадь, 2',
+    'Большая Васильковская, 88',
+    'Вильямса, 5',
+    'Вишневое, ул. Святошинская, 27е',
+    'Григоренко, 22/20',
+    'Дмитриевская, 2а',
+    'Драгоманова, 40г',
+    'Леси Украинки, 19',
+    'Льва Толстого, 11/61',
+    'Лютеранская, 3',
+    'Маяковского, 44a',
+    'Маяковского, 5в',
+    'Межигорская, 15/35д',
+    'Никольский переулок, 1/25',
+    'Победы, 45 (Шулявка)',
+    'Победы, 84в',
+    'Раисы Окипной, 3',
+    'Рогнединская, 5/14 (Шота Руставели, 14)',
+    'Степана Бандеры пр-т, 20б',
+    'ТРЦ «Ocean Plaza»',
+    'Ярославов Вал, 8'
+]
+
+# \U0001F4C1 - папка
+# \U0001F6CD - сумки
+# \U0001F4E6 - Заказы
+# \U0001F4E2 - Новости
+# \U00002699 - Настройки
+# \U00002753 - Помощь
+# \U0001F3E0 - Початок
+
+
+@tBot.bot.message_handler(commands=['start'])
+def start_message(message):
+    message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    message_keyboard.row('\U0001F4C1Меню', '\U0001F6CDКошик')
+    message_keyboard.row('\U0001F4E6Замовлення', '\U0001F4E2Новини')
+    message_keyboard.row('\U00002699Налаштування', '\U00002753Допомога')
+    #tBot.print_message(message.chat.id, 'Ласкаво просимо!')
+    greate_name = message.from_user.first_name if message.from_user.first_name != None else 'любимый клиент'
+    if greate_name != 'любимый клиент' and message.from_user.last_name != None:
+        greate_name += ' ' + message.from_user.last_name
+    greate_message = 'Привет, %s! Я Мико - бот сети ресторанов Евразия. Помогу тебе в выборе блюд' % greate_name
+    #tBot.print_keyboard_message(message.chat.id, 'Ласкаво просимо!', message_keyboard)
+    # greate_name = message.from_user.first_name if message.from_user.first_name != None else 'любимый клиент'
+    # if greate_name != 'любимый клиент' and message.from_user.last_name != None:
+    #     greate_name += ' ' + message.from_user.last_name
+    # tBot.print_keyboard_message(message.chat.id, greate_name, message_keyboard)
+    tBot.print_picture(message.chat.id, 'http://evrasia.colors-run.com/img/miko-3.2.jpg')
+    tBot.print_keyboard_message(message.chat.id, greate_message, message_keyboard)
+    # устанавливаем состояние пользователя
+    set_user(message.chat.id)
+    set_state(message.chat.id, 1)
+    # tBot.print_message(message.chat.id, strings.start_message)
+    # buttonList = [
+    #     'Роли',
+    #     'Бургери',
+    #     'Салати',
+    #     'Закуски',
+    #     'Супи',
+    #     'Гарячі страви',
+    #     'Гарніри',
+    #     'Соуси',
+    #     'Десерти',
+    #     'Додаткові інгридієнти',
+    # ]
+    # message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True)
+    # message_keyboard.row(types.KeyboardButton('Новинки меню'))
+    # middle_list = keyboard_tuple(buttonList, 2)
+    # for i in range(0, len(middle_list)):
+    #     message_keyboard.row(*middle_list[i])
+    # message_keyboard.row(types.KeyboardButton('Кошик'))
+    # tBot.print_keyboard_message(message.chat.id, strings.choose_section, message_keyboard)
+    # # устанавливаем состояние пользователя
+    # set_user(message.chat.id)
+    # set_state(message.chat.id, 1)
+
+# @tBot.bot.callback_query_handler(func=lambda call: True)
+# def callback_inline(call):
+
+# @tBot.bot.message_handler(content_types=["text"])
+# def user_message(message):
+
+
+def choosePayPressed(call):
+    return call and call.data == 'checkout'
+
+
+def tempPressedPay(message):
+    return pressedPay(message) or pressedPayRest(message)
+
+
+def pressedPay(message):
+    return message.text == 'Сплатити'
+
+
+def pressedPayRest(message):
+    return message.text == 'Сплатити в ресторані'
+
+
+def pressedStart(message):
+    return message.text == '\U0001F3E0Початок'
+
+
+def pressedCatalog(message):
+    return message.text == '\U0001F4C1Меню'
+
+
+def pressedOneMeal(message):
+    return message.text == 'Ще одна страва'
+
+
+def pressed3Meal(message):
+    return message.text == 'Ще 3 страви'
+
+
+def pressedBasket(message):
+    return message.text == '\U0001F6CDКошик'
+
+
+@tBot.bot.callback_query_handler(func=choosePayPressed)
+def choosepay(call):
+    tBot.print_keyboard_message(call.message.chat.id, 'Будь-ласка, оберіть спосіб оплати:', choose_rest_keyboard())
+
+
+@tBot.bot.message_handler(func=tempPressedPay)
+def tempPressedPay(message):
+    db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                        database=config.db_name)
+    query = 'SELECT descriptiontable_id, name FROM descriptions WHERE descriptiontable_type = "App\\\\Models\\\\Restaurants" and lang="ua"'
+    cursor = db_con.cursor()
+    cursor.execute(query)
+    cat_list = []
+    for (id, name) in cursor:
+        cat_item = [id, name]
+        cat_list.append(cat_item)
+    cursor.close()
+    db_con.close()
+    # for i in range(0, len(cat_list)):
+    #     print(str(cat_list[i][0])+' '+cat_list[i][1])
+    tBot.print_keyboard_message(message.chat.id, 'Будь-ласка, оберіть ресторан:', rest_keyboard(cat_list))
+
+
+@tBot.bot.message_handler(commands=['busket'])
+def showBasket(message):
+    position_count = 3
+    position_number = 1
+    total_number = 2
+    total_price = 1000.99
+    busket_item_name = 'Назва страви'
+    busket_item_price = 100
+    busket_item_picture = 'https://www.botobot.ru/a/shops/5808/products/image.png'
+    print_busket_item(tBot,
+                      message.chat.id,
+                      position_count,
+                      position_number,
+                      total_number,
+                      total_price,
+                      busket_item_name,
+                      busket_item_price,
+                      busket_item_picture)
+
+
+@tBot.bot.message_handler(func=pressedStart)
+def user_message1(message):
+    message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    message_keyboard.row('\U0001F4C1Меню', '\U0001F6CDКошик')
+    message_keyboard.row('\U0001F4E6Замовлення', '\U0001F4E2Новини')
+    message_keyboard.row('\U00002699Налаштування', '\U00002753Допомога')
+    # tBot.print_message(message.chat.id, 'Ласкаво просимо!')
+    # tBot.print_keyboard_message(message.chat.id, 'Ласкаво просимо!', message_keyboard)
+    greate_name = message.from_user.first_name if message.from_user.first_name != None else 'любимый клиент'
+    if greate_name != 'любимый клиент' and message.from_user.last_name != None:
+        greate_name += ' ' + message.from_user.last_name
+    greate_message = 'Привет, %s! Я Мико - бот сети ресторанов Евразия. Помогу тебе в выборе блюд' % greate_name
+    tBot.print_picture(message.chat.id, 'http://evrasia.colors-run.com/img/
+miko-3.2.jpg')
+    tBot.print_keyboard_message(message.chat.id, greate_message, message_keyboard)
+    # устанавливаем состояние пользователя
+    # set_user(message.chat.id)
+    set_state(message.chat.id, 1)
+    
+
+@tBot.bot.message_handler(func=pressedBasket)
+def user_pressed_basket(message):
+    set_meal_index(message.chat.id, 0)
+    basket = get_basket(message.chat.id)
+    message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    message_keyboard.row('\U0001F3E0Початок')
+    tBot.print_keyboard_message(message.chat.id, 'Кошик', message_keyboard)
+    show_busket(tBot, message, basket)
+
+
+@tBot.bot.message_handler(func=pressedOneMeal)
+def user_message1(message):
+    cat_list = get_meals(message.chat.id)
+    meals_count = get_meals_count(message.chat.id)
+    if len(cat_list) <= meals_count + 1:
+        message_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        message_keyboard.row('\U0001F3E0Початок')
+        tBot.print_keyboard_message(message.chat.id, 'Більше нічого немає', message_keyboard)
+        return
+    set_meals_count(message.chat.id, meals_count+1)
+    inline_keyboard = types.InlineKeyboardMarkup()
+    # inline_keyboard.add(types.InlineKeyboardButton(text=cat_list[meals_count+1][1] + ' - ' + str(cat_list[meals_count+1][2]) + ' грн',
+    #                                                callback_data='meal_' + str(cat_list[meals_count+1][0])))
+    inline_keyboard.add(types.InlineKeyboardButton(text=cat_list[meals_count + 1][1], callback_data='meal_' + str(cat_list[meals_count + 1][0])))
+    message_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    message_keyboard.row('Ще одна страва', 'Ще 3 страви')
+    message_keyboard.row('\U0001F3E0Початок')
+    tBot.print_keyboard_message(message.chat.id, 'Меню', message_keyboard)
+    tBot.print_keyboard_picture(message.chat.id,
+                                'http://evrasia.in.ua/sites/default/files/imagecache/w180/-%D0%B3%D1%80%D1%83%D0%BC%D0%B5-%D0%BC%D0%B0%D0%BA%D0%B8_0.jpg',
+                                inline_keyboard)
+
+
+@tBot.bot.message_handler(func=pressed3Meal)
+def user_message2(message):
+    cat_list = get_meals(message.chat.id)
+    meals_count = get_meals_count(message.chat.id)
+    if len(cat_list) <= meals_count + 3:
+        message_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        message_keyboard.row('Ще одна страва')
+        message_keyboard.row('\U0001F3E0Початок')
+        tBot.print_keyboard_message(message.chat.id, 'Залишилось менше, ніж три страви', message_keyboard)
+        return
+    set_meals_count(message.chat.id, meals_count + 3)
+
+    message_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    message_keyboard.row('Ще одна страва', 'Ще 3 страви')
+    message_keyboard.row('\U0001F3E0Початок')
+    tBot.print_keyboard_message(message.chat.id, 'Меню', message_keyboard)
+    for i in range(1, 4):
+        inline_keyboard = types.InlineKeyboardMarkup()
+        inline_keyboard.add(types.InlineKeyboardButton(text=cat_list[meals_count + i][1] + ' - ' + str(cat_list[meals_count + i][2]) + ' грн',
+                                                       callback_data='meal_' + str(cat_list[meals_count + i][0])))
+
+        tBot.print_keyboard_picture(message.chat.id,
+                                'http://evrasia.in.ua/sites/default/files/imagecache/w180/-%D0%B3%D1%80%D1%83%D0%BC%D0%B5-%D0%BC%D0%B0%D0%BA%D0%B8_0.jpg',
+                                inline_keyboard)
+
+
+@tBot.bot.message_handler(func=pressedCatalog)
+def user_message(message):
+    message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    message_keyboard.row('\U0001F3E0Початок')
+    tBot.print_keyboard_message(message.chat.id, 'Меню', message_keyboard)
+    db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host, database=config.db_name)
+    query = 'SELECT id FROM categories WHERE type = \'products\' and parent_id = 0 and is_online = 1'
+    cursor = db_con.cursor()
+    cursor.execute(query)
+    cat_list = []
+    for (id,) in cursor:
+        cat_item = [id]
+        cat_list.append(cat_item)
+    cursor.close()
+    db_con.close()
+    db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                        database=config.db_name)
+    for i in range(0, len(cat_list)):
+        query = 'SELECT name FROM descriptions WHERE descriptiontable_id = %s and lang = \'ua\' and descriptiontable_type = \'App\\\\Models\\\\Category\''
+        cursor = db_con.cursor()
+        cursor.execute(query, (cat_list[i][0],))
+        for (name,) in cursor:
+            cat_list[i].append(name)
+        cursor.close()
+    db_con.close()
+    # query = 'SELECT id, name, price FROM products WHERE products.category = 0;'
+    # cursor = db_con.cursor()
+    # cursor.execute(query)
+    # cat_list = []
+    # for(id, name, price) in cursor:
+    #     cat_item = [id, name, price]
+    #     cat_list.append(cat_item)
+    # cursor.close()
+    # db_con.close()
+    if len(cat_list) > 0:
+        cat_names = []
+        for i in range(0, len(cat_list)):
+            cat_names.append([cat_list[i][1], cat_list[i][0]])
+        #inline_keyboard = types.InlineKeyboardMarkup()
+        in_buttons = []
+        for i in range(0, len(cat_names)):
+            in_buttons.append(types.InlineKeyboardButton(text=cat_names[i][0], callback_data='parent_'+str(cat_names[i][1])))
+        inline_keyboard = get_inline_keyboard(keyboard_tuple(in_buttons, 2))
+        #tuple_cat = [(types.InlineKeyboardButton(text=cat_names[0][0], callback_data='parent_'+cat_names[0][1]),
+        #              types.InlineKeyboardButton(text=cat_names[1], callback_data='data')),
+        #             (types.InlineKeyboardButton(text=cat_names[0], callback_data='data'),
+        #              types.InlineKeyboardButton(text=cat_names[1], callback_data='data'))]
+        #inline_keyboard.row(*tuple_cat[0])
+        #inline_keyboard.row(*tuple_cat[1])
+        tBot.print_keyboard_message(message.chat.id, 'Оберіть розділ', inline_keyboard)
+
+
+def checkCallbac(call):
+    if call:
+        str_list = call.data.split("_")
+        return str_list[0] == 'parent'
+    return call
+
+
+def checkMeal(call):
+    if call:
+        str_list = call.data.split("_")
+        return str_list[0] == 'meal'
+    return call
+
+
+def checkBasketLeft(call):
+    if call:
+        str_list = call.data.split("_")
+        return str_list[0] == 'basket' and str_list[1] == 'left'
+    return call
+
+
+def checkBasketRight(call):
+    if call:
+        str_list = call.data.split("_")
+        return str_list[0] == 'basket' and str_list[1] == 'right'
+    return call
+
+
+def checkBasketUp(call):
+    if call:
+        str_list = call.data.split("_")
+        return str_list[0] == 'basket' and str_list[1] == 'up'
+    return call
+
+
+def checkBasketDown(call):
+    if call:
+        str_list = call.data.split("_")
+        return str_list[0] == 'basket' and str_list[1] == 'down'
+    return call
+
+
+def checkBasketCross(call):
+    if call:
+        str_list = call.data.split("_")
+        return str_list[0] == 'basket' and str_list[1] == 'cross'
+    return call
+
+
+def checkBasketPress(call):
+    if call:
+        return call.data == '\U0001F6CDКошик'
+    return call
+
+
+@tBot.bot.callback_query_handler(func=checkBasketPress)
+def callback_basket_press(call):
+    set_meal_index(call.message.chat.id, 0)
+    basket = get_basket(call.message.chat.id)
+    message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    message_keyboard.row('\U0001F3E0Початок')
+    tBot.print_keyboard_message(call.message.chat.id, 'Кошик', message_keyboard)
+    show_busket(tBot, call.message, basket)
+
+
+@tBot.bot.callback_query_handler(func=checkBasketCross)
+def callback_basket_cross(call):
+        basket = get_basket(call.message.chat.id)
+        del basket[get_meal_index(call.message.chat.id)]
+        set_full_basket(call.message.chat.id, basket)
+        set_full_price(call.message.chat.id, calc_full_price(basket))
+        if get_meal_index(call.message.chat.id) != 0:
+            set_meal_index(call.message.chat.id, get_meal_index(call.message.chat.id)-1)
+        update_busket(tBot, call.message, call.message.message_id, basket)
+
+
+@tBot.bot.callback_query_handler(func=checkBasketUp)
+def callback_basket_up(call):
+        basket = get_basket(call.message.chat.id)
+        if basket != [[-1]] and len(basket) > 0:
+            basket[get_meal_index(call.message.chat.id)][3] += 2
+            clear_basket(call.message.chat.id)
+            set_full_price(call.message.chat.id, calc_full_price(basket))
+            for i in range(0, len(basket)):
+                set_basket(call.message.chat.id, basket[i])
+            update_busket(tBot, call.message, call.message.message_id, basket)
+
+
+@tBot.bot.callback_query_handler(func=checkBasketDown)
+def callback_basket_down(call):
+    basket = get_basket(call.message.chat.id)
+    if basket != [[-1]] and len(basket) > 0 and basket[get_meal_index(call.message.chat.id)][3] > 2:
+        basket[get_meal_index(call.message.chat.id)][3] -= 2
+        clear_basket(call.message.chat.id)
+        set_full_price(call.message.chat.id, calc_full_price(basket))
+        for i in range(0, len(basket)):
+            set_basket(call.message.chat.id, basket[i])
+        update_busket(tBot, call.message, call.message.message_id, basket)
+
+
+@tBot.bot.callback_query_handler(func=checkBasketLeft)
+def callback_basket_left(call):
+    meal_index = get_meal_index(call.message.chat.id)
+    if meal_index > 0:
+        set_meal_index(call.message.chat.id, meal_index - 1)
+        basket = get_basket(call.message.chat.id)
+        update_busket(tBot, call.message, call.message.message_id, basket)
+
+
+@tBot.bot.callback_query_handler(func=checkBasketRight)
+def callback_basket_right(call):
+    meal_index = get_meal_index(call.message.chat.id)
+    basket = get_basket(call.message.chat.id)
+    if 0 <= meal_index and len(basket)-1 > meal_index:
+        set_meal_index(call.message.chat.id, meal_index + 1)
+        basket = get_basket(call.message.chat.id)
+        update_busket(tBot, call.message, call.message.message_id, basket)
+
+
+@tBot.bot.callback_query_handler(func=checkMeal)
+def callback_inline(call):
+    # 0 - id
+    # 1 - price
+    # 2 - name
+    # 3 - count
+    # 4 - picture
+    str_list = call.data.split('_')
+    db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                        database=config.db_name)
+    # query = 'SELECT id, name, code FROM products WHERE products.parent = {} '.format(str_list[1])
+    # query = 'SELECT id, name, price FROM products WHERE products.parent = %s '
+    query = 'SELECT price FROM products WHERE id = %s'
+    cursor = db_con.cursor()
+    cursor.execute(query, (str_list[1],))
+    cat_list = []
+    for (price,) in cursor:
+        cat_item = [price]
+        cat_list.append(cat_item)
+    cursor.close()
+    db_con.close()
+    db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                        database=config.db_name)
+    query = 'SELECT name FROM descriptions WHERE descriptiontable_type = \'App\\\\Models\\\\Product\' and descriptiontable_id = %s and lang = \'ua\''
+    for i in range(0, len(cat_list)):
+        cursor = db_con.cursor()
+        cursor.execute(query, (str_list[1],))
+        for (name,) in cursor:
+            cat_list[0].append(name)
+        cursor.close()
+    db_con.close()
+    # db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+    #                                     database=config.db_name)
+    # query = 'SELECT name, price FROM products WHERE products.id = %s '
+    # cursor = db_con.cursor()
+    # cursor.execute(query, (str_list[1],))
+    # cat_list = []
+    # for (name, price) in cursor:
+    #     cat_item = [name, price]
+    #     cat_list.append(cat_item)
+    # cursor.close()
+    # db_con.close()
+    db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                        database=config.db_name)
+    query = 'SELECT image FROM gallerys WHERE gallerytable_type = \'App\\\\Models\\\\Product\' and gallerytable_id = %s '
+    cursor = db_con.cursor()
+    cursor.execute(query, (str_list[1],))
+    check_flag = 0
+    for (image,) in cursor:
+        check_flag = 1
+        cat_list[0].append('http://evrasia.colors-run.com' + image)
+    if check_flag != 1:
+        cat_list[0].append(
+            'http://evrasia.in.ua/sites/default/files/imagecache/w180/-%D0%B3%D1%80%D1%83%D0%BC%D0%B5-%D0%BC%D0%B0%D0%BA%D0%B8_0.jpg')
+    cursor.close()
+    db_con.close()
+    basket_entry = [str_list[1], cat_list[0][1], cat_list[0][0], 2, cat_list[0][2]]
+    # tBot.print_message(call.message.chat.id, str(basket_entry))
+    set_basket(call.message.chat.id, basket_entry)
+    full_price = get_full_price(call.message.chat.id)
+    if full_price == -1:
+        full_price = 0
+    set_full_price(call.message.chat.id, full_price + int(basket_entry[2]) * 2)
+    inline_keyboard = types.InlineKeyboardMarkup()
+    # inline_keyboard.row(types.InlineKeyboardButton(text=cat_list[0][1] + ' - ' + str(cat_list[0][0]) + ' грн',
+    #                                                callback_data='meal_' + str(cat_list[0][0])))
+    # inline_keyboard.row(types.InlineKeyboardButton(text=cat_list[0][1], callback_data='meal_' + str(cat_list[0][0])))
+    inline_keyboard.row(types.InlineKeyboardButton(text='Замовити', callback_data='meal_' + str(cat_list[0][0])))
+    inline_keyboard.row(types.InlineKeyboardButton('\U0001F6CDПерейти в Кошик',
+                                                   callback_data='\U0001F6CDКошик'))
+    tBot.update_message_keyboard(call.message.chat.id, call.message.message_id, inline_keyboard)
+
+
+@tBot.bot.callback_query_handler(func=checkCallbac)
+def callback_inline(call):
+    str_list = call.data.split('_')
+    db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                        database=config.db_name)
+    query = 'SELECT id FROM categories WHERE type = \'products\' and parent_id = %s and is_online = 1'
+    cursor = db_con.cursor()
+    cursor.execute(query, (str_list[1],))
+    cat_list = []
+    for (id,) in cursor:
+        cat_item = [id]
+        cat_list.append(cat_item)
+    cursor.close()
+    db_con.close()
+    db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                        database=config.db_name)
+    for i in range(0, len(cat_list)):
+        query = 'SELECT name FROM descriptions WHERE descriptiontable_id = %s and lang = \'ua\' and descriptiontable_type = \'App\\\\Models\\\\Category\''
+        cursor = db_con.cursor()
+        cursor.execute(query, (cat_list[i][0],))
+        for (name,) in cursor:
+            cat_list[i].append(name)
+        cursor.close()
+    db_con.close()
+    # query = 'SELECT id, name, code FROM products WHERE products.parent = %s '
+    # cursor = db_con.cursor()
+    # cursor.execute(query, (str_list[1],))
+    # cat_list = []
+    # for (id, name, code) in cursor:
+    #     cat_item = [id, name, code]
+    #     cat_list.append(cat_item)
+    # cursor.close()
+    # db_con.close()
+    #if len(cat_list) > 0 and cat_list[0][2] == 0:
+    if len(cat_list) > 0:
+        cat_names = []
+        for i in range(0, len(cat_list)):
+            cat_names.append([cat_list[i][1], cat_list[i][0]])
+            # inline_keyboard = types.InlineKeyboardMarkup()
+        in_buttons = []
+        for i in range(0, len(cat_names)):
+            in_buttons.append(
+                types.InlineKeyboardButton(text=cat_names[i][0], callback_data='parent_' + str(cat_names[i][1])))
+        inline_keyboard = get_inline_keyboard(keyboard_tuple(in_buttons, 2))
+        tBot.update_message_text(call.message.chat.id, call.message.message_id, 'Оберіть розділ', inline_keyboard)
+    else:
+        db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                            database=config.db_name)
+        # query = 'SELECT id, name, code FROM products WHERE products.parent = {} '.format(str_list[1])
+        # query = 'SELECT id, name, price FROM products WHERE products.parent = %s '
+        query = 'SELECT products.id, price, weight FROM products LEFT JOIN (category_product) ON (category_product.product_id = products.id) WHERE category_product.category_id = %s and online = 1'
+        cursor = db_con.cursor()
+        cursor.execute(query, (str_list[1],))
+        cat_list = []
+        for (id, price, weight) in cursor:
+            cat_item = [id, price, weight]
+            cat_list.append(cat_item)
+        cursor.close()
+        db_con.close()
+        db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                            database=config.db_name)
+        query = 'SELECT name, description FROM descriptions WHERE descriptiontable_type = \'App\\\\Models\\\\Product\' and descriptiontable_id = %s and lang = \'ua\''
+        for i in range(0, len(cat_list)):
+            cursor = db_con.cursor()
+            cursor.execute(query, (cat_list[i][0],))
+            for (name, description) in cursor:
+                cat_list[i].append(name)
+                cat_list[i].append(description)
+            cursor.close()
+        db_con.close()
+        db_con = connection.MySQLConnection(user=config.db_user, password=config.db_password, host=config.db_host,
+                                            database=config.db_name)
+        query = 'SELECT image FROM gallerys WHERE gallerytable_type = \'App\\\\Models\\\\Product\' and gallerytable_id = %s '
+        for i in range(0, len(cat_list)):
+            cursor = db_con.cursor()
+            cursor.execute(query, (cat_list[i][0],))
+            check_flag = 0
+            for (image,) in cursor:
+                check_flag = 1
+                cat_list[i].append('http://evrasia.colors-run.com'+image)
+            if check_flag != 1:
+                cat_list[i].append('http://evrasia.in.ua/sites/default/files/imagecache/w180/-%D0%B3%D1%80%D1%83%D0%BC%D0%B5-%D0%BC%D0%B0%D0%BA%D0%B8_0.jpg')
+            cursor.close()
+        db_con.close()
+        # set_meals(call.message.chat.id, cat_list)
+        # set_meals_count(call.message.chat.id, 0)
+        # tBot.print_picture(call.message.chat.id, 'http://evrasia.colors-run.com/images/pryana-malina-0.jpg')
+        message_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        # message_keyboard.row('Ще одна страва', 'Ще 3 страви')
+        message_keyboard.row('\U0001F3E0Початок')
+        tBot.print_keyboard_message(call.message.chat.id, 'Меню', message_keyboard)
+        for i in range(0, len(cat_list)):
+            inline_keyboard = types.InlineKeyboardMarkup()
+            # inline_keyboard.add(types.InlineKeyboardButton(text=cat_list[i][3] + ' - ' + str(cat_list[i][1]) + ' грн',
+            #                                                callback_data='meal_' + str(cat_list[i][0])))
+            inline_keyboard.add(types.InlineKeyboardButton(text='Замовити', callback_data='meal_' + str(cat_list[i][0])))
+            tBot.print_keyboard_picture(call.message.chat.id, cat_list[i][5], message_keyboard)
+            tBot.print_keyboard_message_html(call.message.chat.id, '<b>' + cat_list[i][3] + '</b>', message_keyboard)
+            message_str = 'Baга: ' + str(cat_list[i][2]) + ' г ' + 'Ціна: ' + str(cat_list[i][1]) + ' грн\n\n' + \
+                          cat_list[i][4]
+            #tBot.print_keyboard_message(call.message.chat.id, 'Baга: '+str(cat_list[i][2]) + ' г', message_keyboard)
+            #tBot.print_keyboard_message(call.message.chat.id, 'Ціна: ' + str(cat_list[i][1]) + ' грн', message_keyboard)
+            tBot.print_keyboard_message(call.message.chat.id, message_str, inline_keyboard)
+            #tBot.print_keyboard_message(call.message.chat.id, 'Замовити', inline_keyboard)
+    #tBot.print_keyboard_picture(call.message.chat.id, 'http://evrasia.in.ua/sites/default/files/imagecache/w180/-%D0%B3%D1%80%D1%83%D0%BC%D0%B5-%D0%BC%D0%B0%D0%BA%D0%B8_0.jpg', inline_keyboard)
+    #tBot.print_message(call.message.chat.id, 'Data!')
+# @tBot.bot.callback_query_handler(func=lambda call: True)
+# def callback_inline(call):
+#     if call.message:
+#         if get_state(call.message.chat.id) == 2:
+#             if int(call.data) < 6:
+#                 # tBot.print_message(call.message.chat.id, 'Yes!')
+#                 set_state(call.message.chat.id, 3)
+#                 set_meal_count(call.message.chat.id, -1)
+#                 basket = strings.you_choose+'\n'+MealNames[int(call.data)]+'\n'+'Оберіть, будь-ласка, кількість.'+'\n\n'+strings.happy_hours
+#                 basket_entry = []
+#                 basket_entry.append(MealNames[int(call.data)]) # 0 - название
+#                 basket_entry.append(MealPrices[int(call.data)]) # 1 - цена
+#                 basket_entry.append(-1) # 2 - количество
+#                 set_basket(call.message.chat.id, basket_entry)
+#                 set_meal_index(call.message.chat.id, int(call.data))
+#                 keyboard_list = []
+#                 for i in range(1, 7):
+#                     #keyboard.add(types.InlineKeyboardButton(text=str(i), callback_data=str(i)))
+#                     keyboard_list.append(types.InlineKeyboardButton(text=str(i), callback_data=str(i)))
+#                 keyboard = get_inline_keyboard(keyboard_tuple(keyboard_list, 6))
+#                 tBot.print_keyboard_message(call.message.chat.id, basket, keyboard)
+#         elif get_state(call.message.chat.id) == 3:
+#             #tBot.print_message(call.message.chat.id, 'Yes!')
+#             set_state(call.message.chat.id, 4)
+#             set_basket_entry_count(call.message.chat.id, MealNames[get_meal_index(call.message.chat.id)], int(call.data))
+#             basket_msg = strings.basket+'\n'
+#             full_price = 0
+#             full_basket = get_basket(call.message.chat.id)
+#             for i in range(0, len(full_basket)):
+#                 basket_msg = basket_msg+strings.product_name+full_basket[i][0] +\
+#                              '\n'+strings.product_count+str(full_basket[i][2]) +\
+#                             '\n'+strings.product_price+str(full_basket[i][1]*full_basket[i][2])+' грн' +\
+#                     '\n\n'+strings.lanch_box+str(4)+' грн\n\n'
+#                 full_price = full_price+full_basket[i][1]*full_basket[i][2]+4
+#             set_full_price(call.message.chat.id, full_price)
+#             basket_msg = basket_msg + \
+#                          '---------------------------\n' + \
+#                          strings.total_price + str(get_full_price(call.message.chat.id))+' грн'
+#             keyboard_list = [
+#                 'Підтвердити',
+#                 'Додати ще',
+#                 'Очистити'
+#             ]
+#             kt = keyboard_tuple(keyboard_list, 3)
+#             message_keyboard = get_keyboard(kt)
+#             #tBot.print_message(message.chat.id, basket_msg)
+#             tBot.print_keyboard_message(call.message.chat.id, basket_msg, message_keyboard)
+#             #tBot.print_message(call.message.chat.id, basket_msg)
+
+
+
+# @tBot.bot.message_handler(content_types=["text"])
+# def user_message(message):
+#     if get_state(message.chat.id) == 1:
+#         if message.text == 'Кошик':
+#             set_state(message.chat.id, 4)
+#             basket_msg = strings.basket + '\n'
+#             full_basket = get_basket(message.chat.id)
+#             if len(full_basket) == 0 or full_basket[0] == [-1]:
+#                 basket_msg = basket_msg+'Кошик порожній'
+#             else:
+#                 for i in range(0, len(full_basket)):
+#                     basket_msg = basket_msg + strings.product_name + full_basket[i][0] + \
+#                                  '\n' + strings.product_count + str(full_basket[i][2]) + \
+#                                  '\n' + strings.product_price + str(full_basket[i][1] * full_basket[i][2]) + ' грн' + \
+#                                  '\n\n' + strings.lanch_box + str(4) + ' грн\n\n'
+#                 basket_msg = basket_msg + \
+#                              '---------------------------\n' + \
+#                              strings.total_price + str(get_full_price(message.chat.id)) + ' грн'
+#             keyboard_list = [
+#                 'Підтвердити',
+#                 'Додати ще',
+#                 'Очистити'
+#             ]
+#             kt = keyboard_tuple(keyboard_list, 3)
+#             message_keyboard = get_keyboard(kt)
+#             #tBot.print_message(message.chat.id, basket_msg)
+#             tBot.print_keyboard_message(message.chat.id, basket_msg, message_keyboard)
+#         elif message.text == 'Новинки меню':
+#             tBot.print_message(message.chat.id, 'Тут будуть новинки меню')
+#         elif message.text in categoryList:
+#             #tBot.print_message(message.chat.id, 'Тут будуть страви з категорії')
+#             # Устанавливаем состояние выбора блюда
+#             set_state(message.chat.id, 2)
+#             # tBot.print_message(message.chat.id, str(get_state(message.chat.id)))
+#             # tBot.print_message(message.chat.id, get_meal_count(message.chat.id))
+#             set_meal_count(message.chat.id, get_meal_count(message.chat.id)+1)
+#             # tBot.print_message(message.chat.id, get_meal_count(message.chat.id))
+#             for i in range(get_meal_count(message.chat.id)*3, (get_meal_count(message.chat.id)+1)*3):
+#                 if i != (get_meal_count(message.chat.id)+1)*3-1:
+#                     tBot.print_picture(message.chat.id, MealPhoto[i])
+#                 else:
+#                     message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True)
+#                     if (get_meal_count(message.chat.id)+1)*3 < 6:
+#                         message_keyboard.add(types.KeyboardButton('Показати ще 3'))
+#                     if get_meal_count(message.chat.id)*3 >= 3:
+#                         message_keyboard.add(types.KeyboardButton('Показати попередні 3'))
+#                     message_keyboard.add(types.KeyboardButton('Головне меню'))
+#                     message_keyboard.add(types.KeyboardButton('Кошик'))
+#                     tBot.print_keyboard_picture(message.chat.id, MealPhoto[i], message_keyboard)
+#                 descr = MealNames[i]+'\n№'+str(MealNumbers[i])+'\n'+str(MealPrices[i])+'грн, '+MealWeight[i]+'\n'+MealDesription[i]
+#                 keyboard = types.InlineKeyboardMarkup()
+#                 btn = types.InlineKeyboardButton(text='У кошик', callback_data=str(i))
+#                 keyboard.add(btn)
+#                 tBot.print_keyboard_message(message.chat.id, descr, keyboard)
+#         else:
+#             if message.text in MealNames:
+#                 set_state(message.chat.id, 2)
+#                 i = MealNames.index(message.text)
+#                 tBot.print_picture(message.chat.id, MealPhoto[i])
+#                 descr = MealNames[i]+'\n№'+str(MealNumbers[i])+'\n'+str(MealPrices[i])+'грн, '+MealWeight[i]+'\n'+MealDesription[i]
+#                 keyboard = types.InlineKeyboardMarkup()
+#                 btn = types.InlineKeyboardButton(text='У кошик', callback_data=str(i))
+#                 keyboard.add(btn)
+#                 tBot.print_keyboard_message(message.chat.id, descr, keyboard)
+#             else:
+#                 tBot.print_message(message.chat.id, 'Помилка')
+#     elif get_state(message.chat.id) == 2:
+#         if message.text == 'Кошик':
+#             set_state(message.chat.id, 4)
+#             basket_msg = strings.basket + '\n'
+#             full_basket = get_basket(message.chat.id)
+#             if len(full_basket) == 0 or full_basket[0] == [-1]:
+#                 basket_msg = basket_msg+'Кошик порожній'
+#             else:
+#                 for i in range(0, len(full_basket)):
+#                     basket_msg = basket_msg + strings.product_name + full_basket[i][0] + \
+#                                  '\n' + strings.product_count + str(full_basket[i][2]) + \
+#                                  '\n' + strings.product_price + str(full_basket[i][1] * full_basket[i][2]) + ' грн' + \
+#                                  '\n\n' + strings.lanch_box + str(4) + ' грн\n\n'
+#                 basket_msg = basket_msg + \
+#                              '---------------------------\n' + \
+#                              strings.total_price + str(get_full_price(message.chat.id)) + ' грн'
+#             keyboard_list = [
+#                 'Підтвердити',
+#                 'Додати ще',
+#                 'Очистити'
+#             ]
+#             kt = keyboard_tuple(keyboard_list, 3)
+#             message_keyboard = get_keyboard(kt)
+#             #tBot.print_message(message.chat.id, basket_msg)
+#             tBot.print_keyboard_message(message.chat.id, basket_msg, message_keyboard)
+#             #tBot.print_message(message.chat.id, basket_msg)
+#         elif message.text == 'Головне меню':
+#             set_state(message.chat.id, 1)
+#             buttonList = [
+#                 'Роли',
+#                 'Бургери',
+#                 'Салати',
+#                 'Закуски',
+#                 'Супи',
+#                 'Гарячі страви',
+#                 'Гарніри',
+#                 'Соуси',
+#                 'Десерти',
+#                 'Додаткові інгридієнти',
+#             ]
+#             message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True)
+#             message_keyboard.row(types.KeyboardButton('Новинки меню'))
+#             middle_list = keyboard_tuple(buttonList, 2)
+#             for i in range(0, len(middle_list)):
+#                 message_keyboard.row(*middle_list[i])
+#             message_keyboard.row(types.KeyboardButton('Кошик'))
+#             tBot.print_keyboard_message(message.chat.id, strings.choose_section, message_keyboard)
+#         elif message.text == 'Показати ще 3':
+#             set_meal_count(message.chat.id, get_meal_count(message.chat.id)+1)
+#             for i in range(get_meal_count(message.chat.id)*3, (get_meal_count(message.chat.id)+1)*3):
+#                 if i != (get_meal_count(message.chat.id)+1)*3-1:
+#                     tBot.print_picture(message.chat.id, MealPhoto[i])
+#                 else:
+#                     message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True)
+#                     if (get_meal_count(message.chat.id)+1)*3 < 6:
+#                         message_keyboard.add(types.KeyboardButton('Показати ще 3'))
+#                     if get_meal_count(message.chat.id)*3 >= 3:
+#                         message_keyboard.add(types.KeyboardButton('Показати попередні 3'))
+#                     message_keyboard.add(types.KeyboardButton('Головне меню'))
+#                     message_keyboard.add(types.KeyboardButton('Кошик'))
+#                     tBot.print_keyboard_picture(message.chat.id, MealPhoto[i], message_keyboard)
+#                 descr = MealNames[i]+'\n№'+str(MealNumbers[i])+'\n'+str(MealPrices[i])+'грн, '+MealWeight[i]+'\n'+MealDesription[i]
+#                 keyboard = types.InlineKeyboardMarkup()
+#                 btn = types.InlineKeyboardButton(text='У кошик', callback_data=str(i))
+#                 keyboard.add(btn)
+#                 tBot.print_keyboard_message(message.chat.id, descr, keyboard)
+#         elif message.text == 'Показати попередні 3':
+#             set_meal_count(message.chat.id, get_meal_count(message.chat.id)-1)
+#             for i in range(get_meal_count(message.chat.id)*3, (get_meal_count(message.chat.id)+1)*3):
+#                 if i != (get_meal_count(message.chat.id)+1)*3-1:
+#                     tBot.print_picture(message.chat.id, MealPhoto[i])
+#                 else:
+#                     message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True)
+#                     if (get_meal_count(message.chat.id)+1)*3 < 6:
+#                         message_keyboard.add(types.KeyboardButton('Показати ще 3'))
+#                     if get_meal_count(message.chat.id)*3 >= 3:
+#                         message_keyboard.add(types.KeyboardButton('Показати попередні 3'))
+#                     message_keyboard.add(types.KeyboardButton('Головне меню'))
+#                     message_keyboard.add(types.KeyboardButton('Кошик'))
+#                     tBot.print_keyboard_picture(message.chat.id, MealPhoto[i], message_keyboard)
+#                 descr = MealNames[i]+'\n№'+str(MealNumbers[i])+'\n'+str(MealPrices[i])+'грн, '+MealWeight[i]+'\n'+MealDesription[i]
+#                 keyboard = types.InlineKeyboardMarkup()
+#                 btn = types.InlineKeyboardButton(text='У кошик', callback_data=str(i))
+#                 keyboard.add(btn)
+#                 tBot.print_keyboard_message(message.chat.id, descr, keyboard)
+#                 #tBot.print_message(message.chat.id, descr)
+#                 #tBot.print_message(message.chat.id, 'Кнопка "У кошик"')
+#
+#
+#
+#             # tBot.print_message(message.chat.id, 'Фото страви')
+#             # tBot.print_picture(message.chat.id, 'https://www.slivki.by/znijki-media/w522_322/default/1009921/1493994936_sushi-minsk-skidka-tokyosushi-2.jpg')
+#             # tBot.print_message(message.chat.id, 'Опис страви')
+#             # tBot.print_message(message.chat.id, 'Кнопка "У кошик"')
+#         else:
+#             tBot.print_message(message.chat.id, 'Помилка')
+#     elif get_state(message.chat.id) == 4:
+#         if message.text == 'Підтвердити':
+#             set_state(message.chat.id, 5)
+#             tBot.print_keyboard_message(message.chat.id, strings.your_name, types.ReplyKeyboardRemove())
+#         elif message.text == 'Додати ще':
+#             set_state(message.chat.id, 1)
+#             buttonList = [
+#                 'Роли',
+#                 'Бургери',
+#                 'Салати',
+#                 'Закуски',
+#                 'Супи',
+#                 'Гарячі страви',
+#                 'Гарніри',
+#                 'Соуси',
+#                 'Десерти',
+#                 'Додаткові інгридієнти',
+#             ]
+#             message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True)
+#             message_keyboard.row(types.KeyboardButton('Новинки меню'))
+#             middle_list = keyboard_tuple(buttonList, 2)
+#             for i in range(0, len(middle_list)):
+#                 message_keyboard.row(*middle_list[i])
+#             message_keyboard.row(types.KeyboardButton('Кошик'))
+#             tBot.print_keyboard_message(message.chat.id, strings.choose_section, message_keyboard)
+#         elif message.text == 'Очистити':
+#             clear_basket(message.chat.id)
+#             tBot.print_message(message.chat.id, 'Кошик порожній')
+#             set_state(message.chat.id, 1)
+#             buttonList = [
+#                 'Роли',
+#                 'Бургери',
+#                 'Салати',
+#                 'Закуски',
+#                 'Супи',
+#                 'Гарячі страви',
+#                 'Гарніри',
+#                 'Соуси',
+#                 'Десерти',
+#                 'Додаткові інгридієнти',
+#             ]
+#             message_keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True)
+#             message_keyboard.row(types.KeyboardButton('Новинки меню'))
+#             middle_list = keyboard_tuple(buttonList, 2)
+#             for i in range(0, len(middle_list)):
+#                 message_keyboard.row(*middle_list[i])
+#             message_keyboard.row(types.KeyboardButton('Кошик'))
+#             tBot.print_keyboard_message(message.chat.id, strings.choose_section, message_keyboard)
+#         else:
+#             tBot.print_message(message.chat.id, 'Помилка')
+#     elif get_state(message.chat.id) == 5:  # Имя
+#         set_state(message.chat.id, 6)
+#         set_custumer_name(message.chat.id, message.text)
+#         tBot.print_keyboard_message(message.chat.id, strings.your_phone, types.ReplyKeyboardRemove())
+#     elif get_state(message.chat.id) == 6:
+#         set_state(message.chat.id, 7)
+#         set_custumer_phone(message.chat.id, message.text)
+#         tBot.print_keyboard_message(message.chat.id, strings.additional_info, types.ReplyKeyboardRemove())
+#     elif get_state(message.chat.id) == 7:
+#         set_state(message.chat.id, 8)
+#         set_custumer_additional_info(message.chat.id, message.text)
+#         kt = keyboard_tuple(resturants, 2)
+#         message_keyboard = get_keyboard(kt)
+#         tBot.print_keyboard_message(message.chat.id, strings.choose_restaurant, message_keyboard)
+#     elif get_state(message.chat.id) == 8:
+#         set_state(message.chat.id, 9)
+#         set_custumer_resturant(message.chat.id, message.text)
+#         keyboard_list = [
+#             'Підтвердити'
+#         ]
+#         kt = keyboard_tuple(keyboard_list, 3)
+#         message_keyboard = get_keyboard(kt)
+#         tBot.print_keyboard_message(message.chat.id, 'Для завершення замовлення, натисніть "Підтвердити"', message_keyboard)
+#     elif get_state(message.chat.id) == 9:
+#         keyboard_list = [
+#             'Сплатити онлайн',
+#             'Сплатити готівкою'
+#         ]
+#         kt = keyboard_tuple(keyboard_list, 3)
+#         message_keyboard = get_keyboard(kt)
+#         tBot.print_keyboard_message(message.chat.id, strings.order_complit, message_keyboard)
+#     else:
+#         tBot.print_message(message.chat.id, 'Помилка')
+
+@tBot.bot.message_handler(commands=['getName'])
+def getName(message):
+    tBot.print_keyboard_message(message.chat.id, strings.your_name, types.ReplyKeyboardRemove())
+
+
+@tBot.bot.message_handler(commands=['getPhone'])
+def getPhone(message):
+    tBot.print_keyboard_message(message.chat.id, strings.your_phone, types.ReplyKeyboardRemove())
+
+
+@tBot.bot.message_handler(commands=['getAdditionalInfo'])
+def getAdditionalInfo(message):
+    tBot.print_keyboard_message(message.chat.id, strings.additional_info, types.ReplyKeyboardRemove())
+
+
+@tBot.bot.message_handler(commands=['getResturant'])
+def getResturant(message):
+    tBot.print_keyboard_message(message.chat.id, strings.choose_restaurant, types.ReplyKeyboardRemove())
+
+
+
+tBot.bot.remove_webhook()
+tBot.bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH, certificate=open(WEBHOOK_SSL_CERT, 'r'))
+cherrypy.config.update({
+    'server.socket_host': WEBHOOK_LISTEN,
+    'server.socket_port': WEBHOOK_PORT,
+    'server.ssl_module': 'builtin',
+    'server.ssl_certificate': WEBHOOK_SSL_CERT,
+    'server.ssl_private_key': WEBHOOK_SSL_PRIV
+})
+
+cherrypy.quickstart(WebhookServer(), WEBHOOK_URL_PATH, {'/': {}})
